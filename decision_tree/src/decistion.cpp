@@ -177,28 +177,29 @@ void TASK_NODE::calculate_cost(){
     
 }//cost部分，需要着重修改
 
-void TASK_NODE::is_finish_last(){
-    if(task_name == SEARCH){
-            finish_last_ = true;
-        else
-            finish_last_ = false;
-    }else if(task_name == CHECK){
-        // finish_last_ = true;
-        finish_last_ = false;
-    }else if(task_name == ATTACK){
-        // finish_last_ = true;
-        finish_last_ = false;
-    }   
-}//判断前一次任务是否完成，这里需要修改,没有想好怎么改
+// void TASK_NODE::is_finish_last(){
+//     if(task_name == SEARCH){
+//         double last_target_dis = ();
+//             finish_last_ = true;
+//         else
+//             finish_last_ = false;
+//     }else if(task_name == CHECK){
+//         // finish_last_ = true;
+//         finish_last_ = false;
+//     }else if(task_name == ATTACK){
+//         // finish_last_ = true;
+//         finish_last_ = false;
+//     }   
+// }//判断前一次任务是否完成，这里需要修改,没有想好怎么改
 
 bool TASK_NODE::precon(int task_name){
     
     bool precon = false;
-    is_finish_last();
+    // is_finish_last();
     switch (task_name)
     {
         case SEARCH:
-            if(uncover_range_== true && finish_last_ == true){
+            if(uncover_range_== true && finish_last == true){
                 precon = true;
             }
             
@@ -221,7 +222,7 @@ bool TASK_NODE::precon(int task_name){
             break;
     }
     return precon;
-}
+}//此处的finish_last应为在执行的任务的时候进行判断
 
 
 
