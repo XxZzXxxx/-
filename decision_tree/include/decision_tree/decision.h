@@ -17,21 +17,21 @@
 class TASK_NODE{
     private:
         std::string current_task;
-        
+        int drone_num;
         
         Eigen::Vector3d virtual_target_position_;
         Eigen::Vector3d target_position_;
-        Eigen::Vector3d current_position_;
-        double unknown_size;
+        std::map<int, Eigen::Vector3d> current_position;
+        double unknown_size;//不知道干啥的
         /* 0 : search, 1: check, 2: attack */
-        std::vector<double>  task_cost;
-        std::vector<bool> task_precon;//任务前置条件是否完成
+        std::map<int, std::map<std::string, double>>  task_cost;//(drone_num, vector<double>(3,0));//将所有飞机的task_cost放置进来
+        std::map<int, std::map<std::string, bool>> task_precon;//任务前置条件是否完成
 
         
         int true_target_;
         int virtual_target_;
         bool uncover_range_;
-        bool finish_last_;
+        std::map<int, std::map<std::string, bool>>  finish_last_;//存储各个飞机的前置任务是否完成
         TASK_NODE(){};
 
     public:
@@ -39,25 +39,43 @@ class TASK_NODE{
              CHECK=1,
              ATTACK=2
             };
-        bool doing_last_task;//表示是否还在执行上一个任务？
+        std::map<int, bool> doing_last_task;//表示是否还在执行上一个任务？
         string task_name_[3] = {"search","check","attack"};
-        TASK_NODE(int virutal,int true_target){
+        TASK_NODE(int virutal,int true_target,int drone_num){
             true_target_ = true_target;
             virtual_target_ = virutal;
-            fscore = {{SEARCH,100},{CHECK,100},{ATTACK,100}};//完成任务得分
-            c_fscore =100;//当前总得分
+            for(int i = 0;i<drone_num;i++)
+            {
+            fscore[i] = {{SEARCH,100},{CHECK,100},{ATTACK,100}};
+            // task_cost[i]["SEARCH"] = 100.0;   // 初始化搜索任务代价为100.0
+            // task_cost[i]["CHECK"] = 100.0;    // 初始化检查任务代价为100.0
+            // task_cost[i]["ATTACK"] = 100.0;   // 初始化攻击任务代价为100.0
+
+            task_precon[i]["SEARCH"] = true;
+            task_precon[i]["CHECK"] = true;
+            task_precon[i]["ATTACK"] = true;
+            finish_last_[i]["SEARCH"] = true;
+            finish_last_[i]["CHECK"] = true;
+            finish_last_[i]["ATTACK"] = true;
+
+            doing_last_task[i] = false;
+
+            task_cost_[i] = {{SEARCH,1.0},{CHECK,2.0},{ATTACK,3.0}};
+            action_cost_[i] = {{SEARCH,5.0},{CHECK,100.0},{ATTACK,100.0}};
+            task_bonus_[i] = {{SEARCH,2.5},{CHECK,10.0},{ATTACK,10.0}};
+            }//初始化任务得分
+            m_fscore =100;//当前总得分
             task_name =0;//初始化任务
-            doing_last_task = false;//初始化是否执行上一次任务
         };
-        std::map<int, double> fscore;
-        double c_fscore;
+        std::map<int, std::map<int, double>> fscore;
+        double m_fscore;//当前最小的cost
         void calculate_cost();//计算在去执行该任务上的cost
         int task_name;
-        double task_cost_;//完成任务本身需要的cost
-        double action_cost_;//在去执行该任务所需要的cost
-        double task_bonus_;//执行完任务对于总任务的推进奖励,假设16个位置点共有4个目标点，假设check是1贡献值，search就是1/4，attack是1
-        bool precon(int task_name);//检查执行该任务的前置条件是否满足
-        void is_finish_last();//检查是否完成了上一次的任务
+        std::map<int, std::map<int, double>> task_cost_;//完成任务本身需要的cost
+        std::map<int, std::map<int, double>> action_cost_;//在去执行该任务所需要的cost
+        std::map<int, std::map<int, double>> task_bonus_;//执行完任务对于总任务的推进奖励,假设16个位置点共有4个目标点，假设check是1贡献值，search就是1/4，attack是1
+        bool precon(int droneid,int task_name);//检查执行该任务的前置条件是否满足
+        //void is_finish_last();//检查是否完成了上一次的任务
         typedef std::shared_ptr<TASK_NODE> Ptr;
 
 };
@@ -66,29 +84,29 @@ class DecisionTree
 {
     private:
         int drone_id;
-        
     public:
         int virtual_target_;
         int true_target_;
         // true target, global position
         std::vector<Eigen::Vector3d> target_;//记录多个目标位置
         // detect target
-        std::string current_task="search";//初始化当前任务
+       std::map<int, std::string> current_task;//初始化当前任务
         // current position of robot between the detect target
         std::vector<double> distance_current_point;//记录机器人当前位置和上一次任务应该到达的位置之间的距离
         std::vector<double> distance_target;//记录机器人当前位置和本次任务应该到达位置之间的距离
         int current_potential_point_index;
         int current_target_index;
         typedef std::shared_ptr<DecisionTree> Ptr;
-        Eigen::Vector3d current_position_;//当前位置
+        std::map<int, Eigen::Vector3d> current_position_;//当前位置
         DecisionTree(int id){
             drone_id = id;
             true_target_ = 0;
             virtual_target_ = 0;
+            current_task[id] = "search";//根据当前id初始化
         };
         
-        void update_dis_cur_pt(Eigen::Vector3d target_position);//更新无人当前位置和目标点之间距离
-        void decision_making_node();//决策部分
+        void update_dis_cur_pt(Eigen::Vector3d target_position);//更新无人当前位置和目标点之间距离，并判断是否加入目标树
+        void decision_making_node(int drone_num);//决策部分
         void print_task_name();
         TASK_NODE::Ptr task_node;
         

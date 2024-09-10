@@ -25,9 +25,9 @@ void initSearchMap(){
     }
 }//初始化位置点位置
 
-Eigen::Vector3d choosenextwaypoint(Eigen::Vector3d current_position,int id){
+Eigen::Vector3d choosenextwaypoint(std::map<int, Eigen::Vector3d> current_position,int id){
     if(id_init[id]==false){
-        last_pos[id] = current_position;   
+        last_pos[id] = current_position[id];   
     }//若无人机还未初始化，则将当前位置当作last pos
     Eigen::Vector3d next_position= last_pos[id];//不懂，如果是初始化为什么不直接设成0
     // static int num =0;
@@ -38,8 +38,8 @@ Eigen::Vector3d choosenextwaypoint(Eigen::Vector3d current_position,int id){
         int min = 0;        
         for (int j=0; j<16; j++){
             Eigen::Vector3d pos;
-            if(distance > (map_position[j]- current_position).norm()&& occ_map[j] == 0){
-                distance = (map_position[j]- current_position).norm();
+            if(distance > (map_position[j]- current_position[id]).norm()&& occ_map[j] == 0){
+                distance = (map_position[j]- current_position[id]).norm();
                 
                 next_position = map_position[j];
                 last_pos[id] = next_position;
@@ -53,14 +53,14 @@ Eigen::Vector3d choosenextwaypoint(Eigen::Vector3d current_position,int id){
         std::cout << "init_position: "<<next_position<<std::endl;
         return next_position;
     }//未初始化的寻找最近的可被search的位置点
-    if((current_position - last_pos[id]).norm() > 0.2){
+    if((current_position[id] - last_pos[id]).norm() > 0.2){
         return last_pos[id];
     }//若飞机距离上一次完成的位置点相隔过远则判定为任务未完成
     std::cout << "occ_map: "<<occ_map[0]<<";"<<occ_map[1]<<";"<<occ_map[2]<<";"
               <<occ_map[3]<<";"<<occ_map[4]<<";"<<occ_map[5]<<";"<<occ_map[6]<<";"
               <<occ_map[7]<<";"<<occ_map[8]<<std::endl;//不懂
     for(int i=0;i<16;i++){
-      if(occ_map[i]==0 && (map_position[i] - current_position).norm() < 5.3){
+      if(occ_map[i]==0 && (map_position[i] - current_position[id]).norm() < 5.3){
           next_position = map_position[i];
           occ_map[i] = 1;
           break;
@@ -100,24 +100,29 @@ void DecisionTree::update_dis_cur_pt(Eigen::Vector3d target_position){
 }
 
 
-void DecisionTree::decision_making_node(){
+void DecisionTree::decision_making_node(int drone_num){
     // do something
-    task_node.reset(new TASK_NODE(virtual_target_,true_target_));
+    int drone_num_ = drone_num;
+    task_node.reset(new TASK_NODE(virtual_target_,true_target_,drone_num_));
     task_node->calculate_cost();//计算各个任务的cost，此处需要增添多层决策
     if(task_node->doing_last_task==true){
             task_node = nullptr;
             return;
     }//判断上一次任务是否完成
+    for(int i=0;i<drone_num_;i++){
+    task_node.fscore = fscore[i];//取出第i个飞机的fscore
+    task_node.m_fscore = std::numeric_limits<double>::max(); // 初始化为最大值
+    task_node.task_name = -1; // 初始化为无效任务类型
     for (const auto &task : task_node->fscore)
     {
-        if(task_node->c_fscore > task.second){
-            task_node->c_fscore = task.second;//更新任务节点中cost最小值
+        if(task_node->m_fscore > task.second){
+            task_node->m_fscore = task.second;//更新任务节点中cost最小值
             task_node->task_name = task.first;//更新cost最小的任务
         }
     }
     // std::cout<< "task_name: "<<task_node->task_name<<std::endl;
    
-    current_task = task_node->task_name_[task_node->task_name];
+    current_task[i] = task_node->task_name_[task_node->task_name];
 
     if(task_node->task_name == 1){
         virtual_target_--;
@@ -125,6 +130,7 @@ void DecisionTree::decision_making_node(){
     }//执行check任务，排查掉一个虚拟目标，这个放这合适吗？
     // delete task_node;
     task_node = nullptr;
+    }
 }
 
 void DecisionTree::print_task_name(){
@@ -140,6 +146,7 @@ void DecisionTree::update_status(Eigen::Vector3d position){
 
 
 void TASK_NODE::calculate_cost(){
+    for(int j=0;j<drone_num;j++){
     for(int i=0;i<3;i++){
         
         task_precon.push_back(precon(i));
@@ -150,7 +157,7 @@ void TASK_NODE::calculate_cost(){
                 action_cost_ = 5;//search搜索邻近位置点
                 task_bonus_ = 2.5;
                 missionallcost -=task_bonus_;
-                fscore[SEARCH] = task_cost_ + action_cost_ + missionallcost;
+                fscore[i][SEARCH] = task_cost_ + action_cost_ + missionallcost;
                 doing_last_task = false;
             }else if(i == 1){   
                 // check cost
@@ -158,7 +165,7 @@ void TASK_NODE::calculate_cost(){
                 action_cost_ = (current_position_-virtual_target_position_).norm();
                 task_bonus_ = 10.0;
                 missionallcost -=task_bonus_;
-                fscore[CHECK] = task_cost_ + action_cost_ + missionallcost;
+                fscore[i][CHECK] = task_cost_ + action_cost_ + missionallcost;
                 doing_last_task = false;
             }else if(i == 2){
                 // attack cost
@@ -166,13 +173,14 @@ void TASK_NODE::calculate_cost(){
                 action_cost_ = (current_position_-target_position_).norm();
                 task_bonus_ = 10.0;
                 missionallcost -=task_bonus_;
-                fscore[ATTACK] = task_cost_ + action_cost_ + missionallcost;
+                fscore[i][ATTACK] = task_cost_ + action_cost_ + missionallcost;
                 doing_last_task = false;
             }
         }else if(precon(0)==false && precon(1)==false && precon(2)==false){
                 // doing the last task
                 doing_last_task = true;
         }
+    }
     }
     
 }//cost部分，需要着重修改
@@ -199,7 +207,7 @@ bool TASK_NODE::precon(int task_name){
     switch (task_name)
     {
         case SEARCH:
-            if(uncover_range_== true && finish_last == true){
+            if(uncover_range_== true && doing_last_task == true){
                 precon = true;
             }
             
@@ -242,10 +250,10 @@ void Decision::decision_making(const ros::TimerEvent &e){
     while(!decision_queue_1.empty()){
         DecisionTree::Ptr decision_tree = decision_queue_1.top();//对优先级最高的决策树节点pop
         /* do something*/
-        decision_tree->update_dis_cur_pt(target_position_);//更新无人机当前位置到target的距离
+        decision_tree->update_dis_cur_pt(target_position_);//更新无人机当前位置到target的距离(search)
         decision_queue_1.pop();//弹出已经处理过的节点
         decision_queue_2.push(decision_tree);
-        decision_tree->decision_making_node();//对当前决策树节点进行任务决策分配
+        decision_tree->decision_making_node(drone_num);//对当前决策树节点进行任务决策分配
         if(decision_tree->current_task == "search"){
             traj_utils::IdOdom id_target;
             Eigen::Vector3d next_position = choosenextwaypoint(decision_tree->current_position_,decision_tree->getid());
