@@ -2,31 +2,18 @@
 
 double missionallcost = 40.0;
 std::array<Eigen::Vector3d, 16> map_position;
-int occ_map[16];
+std::array<int, 16> occ_map;
 
 AStar::Ptr astar = std::make_shared<AStar>();
-
-void initSearchMap()
-{
-   id_init[0] = false;
-    id_init[1] = false;
-    id_init[2] = false;
-    for(int i=-1; i<3;i++){
-      for (int j=-1; j<3; j++){
-        Eigen::Vector3d pos;
-        pos << i*5.0, j*5.0, 1.0 ;
-        map_position[i*4+j+5] = pos;
-        occ_map[i*4+j+5] = 0;    
-      }
-    }
-}//需要外接来初始化地图
 
 Eigen::Vector3d choosenextwaypoint(std::map<int, Eigen::Vector3d> current_position, int id, AStar::Ptr astar) 
 {
     Eigen::Vector3d next_position = current_position[id];
     double min_cost = std::numeric_limits<double>::max();
     int min_index = -1;
-        
+    
+
+
     for(int i = 0; i < 16; i++) {
         if(occ_map[i] == 0 && (map_position[i] - current_position[id]).norm() < 5.3) {
             double cost = astar->calculatePathCost(current_position[id], map_position[i]);
@@ -53,8 +40,8 @@ TASK_NODE::TASK_NODE(int virtual_target, int true_target, int drone_num, AStar::
         action_cost_[i] = {{SEARCH, 5.0}, {CHECK, 100.0}, {ATTACK, 100.0}};
         task_bonus_[i] = {{SEARCH, 2.5}, {CHECK, 10.0}, {ATTACK, 10.0}};
     }
-    decided_drones_simulations.virtual_targets = virtual_target_;
-    decided_drones_simulations.true_targets = true_target_;
+    decided_drones_simulations.virtual_targets = 0;
+    decided_drones_simulations.true_targets = 0;
 }
 
 
@@ -76,11 +63,11 @@ void TASK_NODE::calculate_cost(int drone_id) {
                         }
                         break;
                     case CHECK:
-                        std::tie(target_position, action_cost) = getBestVirtualTarget(drone_id);
+                        std::tie(target_position, action_cost) = getBestTarget(drone_id, TargetType::VIRTUAL);
                         selected_targets[drone_id][CHECK] = target_position;
                         break;
                     case ATTACK:
-                        std::tie(target_position, action_cost) = getBestTrueTarget(drone_id);
+                        std::tie(target_position, action_cost) = getBestTarget(drone_id, TargetType::TRUE);
                         selected_targets[drone_id][ATTACK] = target_position;
                         break;
                 }
@@ -130,46 +117,31 @@ Eigen::Vector3d TASK_NODE::getNextSearchPosition(int drone_id) {
         return choosenextwaypoint(current_position, drone_id);
     }
 
-std::pair<Eigen::Vector3d, double> TASK_NODE::getBestVirtualTarget(int drone_id){
+std::pair<Eigen::Vector3d, double> TASK_NODE::getBestTarget(int drone_id, TargetType type) {
+    const auto& target_positions = (type == TargetType::VIRTUAL) ? virtual_target_positions : true_target_positions;
 
-    if (virtual_target_positions.empty()) {
-            // 返回一个"空"位置和最大 cost
-            return {Eigen::Vector3d::Zero(), std::numeric_limits<double>::max()};
-        }
-
-    Eigen::Vector3d best_target;
-    double min_cost = std::numeric_limits<double>::max();
-    for (const auto& target : virtual_target_positions) {
-            double cost = astar->calculatePathCost(current_position.at(drone_id), target);
-            if (cost < min_cost) {
-                min_cost = cost;
-                best_target = target;
-            }
-        }
-    return {best_target, min_cost};
-}
-
-std::pair<Eigen::Vector3d, double> TASK_NODE::getBestTrueTarget(int drone_id){
-
-    if (true_target_positions.empty()) {
-            // 返回一个"空"位置和最大 cost
-            return {Eigen::Vector3d::Zero(), std::numeric_limits<double>::max()};
-        }
+    if (target_positions.empty()) {
+        // 返回一个"空"位置和最大 cost
+        return {Eigen::Vector3d::Zero(), std::numeric_limits<double>::max()};
+    }
 
     Eigen::Vector3d best_target;
     double min_cost = std::numeric_limits<double>::max();
-    for (const auto& target : true_target_positions) {
-        double cost = astar->calculatePathCost(current_position[drone_id], target);
+
+    for (const auto& target : target_positions) {
+        double cost = astar->calculatePathCost(current_position.at(drone_id), target);
         if (cost < min_cost) {
-                min_cost = cost;
-                best_target = target;
-            }
+            min_cost = cost;
+            best_target = target;
         }
+    }
+
     return {best_target, min_cost};
 }
 
 void TASK_NODE::update_simulation_result(int drone_id, int virtual_targets, int true_targets) {
-    decided_drones_simulations += {virtual_targets, true_targets};
+    decided_drones_simulations.virtual_targets += virtual_targets;
+    decided_drones_simulations.true_targets += true_targets;
 }
 
 SimulationResult TASK_NODE::get_current_state() const {
@@ -197,7 +169,6 @@ void DecisionTree::three_layer_decision(const TASK_NODE::Ptr& task_node, const S
 }
 
 void DecisionTree::first_layer_decision(TASK_NODE::Ptr& task_node, const SimulationResult& current_state){
-    
     double best_cost = std::numeric_limits<double>::max();
     int best_task = -1;
 
@@ -310,25 +281,45 @@ void DecisionTree::reset_decision_state() {
     best_first_layer_fscore = std::numeric_limits<double>::max();
 }
 
-Decision::Decision(ros::NodeHandle &nh) {
+Decision::Decision(ros::NodeHandle &nh) : is_decision_running(false) {
     initDecision(nh);
-    task_result_sub = nh.subscribe("/task_result", 10, &Decision::task_result_callback, this);//订阅任务结果信息
-    replanning_needed = false;
 }
 
-void Decision::decision_making(const ros::TimerEvent &e) {
-    std::cout << "decision_making" << std::endl;
+Decision::~Decision() {
+    if (decision_thread.joinable()) {
+        decision_thread.join();
+    }
+}
 
-    ROS_INFO_STREAM("Number of decision trees: " << decision_trees.size());
+void Decision::start_decision_making() {
+    if (decision_thread.joinable()) {
+        decision_thread.join();
+    }
+    is_decision_running = true;
+    decision_thread = std::thread(&Decision::decision_thread_function, this);
+}
+
+void Decision::decision_thread_function() {
+    decision_making();
+    {
+        std::lock_guard<std::mutex> lock(decision_mutex);
+        is_decision_running = false;
+    }
+    cv.notify_all();
+    ROS_INFO("Decision making completed");
+}
+
+void Decision::decision_making() {
+    if(!allAreasExplored()){
+    std::lock_guard<std::mutex> lock(task_node_mutex);
+    ROS_INFO("Starting decision making process");
+    // 重置任务完成状态
+    std::fill(task_completed.begin(), task_completed.end(), false);
 
     if (decision_trees.empty()) {
         ROS_WARN("No decision trees available. Check initialization.");
         return;
     }
-
-    if (replanning_needed || check_replanning_condition()) {
-        replan();
-    }//需要放在外面充当外部接口判断是否重规划
 
     // 重置决策状态和已决策飞机集合
     for (auto& tree : decision_trees) {
@@ -336,7 +327,12 @@ void Decision::decision_making(const ros::TimerEvent &e) {
     }
     decided_drones.clear();
     reset_simulation_results();
+    for (int i = 0; i < drone_num; ++i) {
+        task_node->selected_targets[i].clear();
+    }
 
+    SimulationResult current_state = task_node->get_actual_state();
+    
     // 决策过程
     while (decided_drones.size() < decision_trees.size()) {
         calculate_priorities();
@@ -346,48 +342,59 @@ void Decision::decision_making(const ros::TimerEvent &e) {
             break;
         }
 
-        next_drone->three_layer_decision(task_node);
-        decided_drones.insert(next_drone->getid());
-
-        SimulationResult current_state = task_node->get_current_state();
         next_drone->three_layer_decision(task_node, current_state);
         decided_drones.insert(next_drone->getid());
 
-        // Update task node with simulated results
         int simulated_virtual_targets = next_drone->simulate_virtual_target(next_drone->best_first_layer_task, next_drone->getid(), current_state.virtual_targets);
         int simulated_true_targets = next_drone->simulate_true_target(next_drone->best_first_layer_task, next_drone->getid(), current_state.true_targets);
         task_node->update_simulation_result(next_drone->getid(), simulated_virtual_targets, simulated_true_targets);
+        
+        // 更新当前状态
+        current_state = task_node->get_current_state();
     }
-
     // 执行任务
     execute_tasks();
+    }else{
+        ROS_INFO("All areas explored. Mission completed.");
+    }
 
-    // 发布目标点和显示信息
-    target_pub.publish(target_point);
-    rviz_display();
 }
 
 void Decision::initDecision(ros::NodeHandle &nh) {
     nh_ = nh;
-    nh.param("/decision_tree/manager/drone_num", drone_num, 1);
+    nh.param<int>("/decision_tree/manager/drone_num", drone_num, 1);
+    nh_.param("/decision_tree/completion_threshold", completion_threshold, 0.5);
+
+    // 初始化网格地图
+    grid_map_ = std::make_shared<GridMap>();
+    grid_map_->initMap(nh);
+    grid_map_->divideMapAndFindCenters(); 
+
+    // 获取地图信息
+    map_position = grid_map_->get_map_position();
+    occ_map = grid_map_->get_occ_map();
     
     task_node = std::make_shared<TASK_NODE>(0, 0, drone_num, std::make_shared<AStar>());
-    
+    ego_planners.reserve(drone_num);
+    decision_trees.reserve(drone_num);
+    odom_subs.resize(drone_num);
     for (int i = 0; i < drone_num; i++) {
         decision_trees.push_back(std::make_shared<DecisionTree>(i));
+        auto planner = std::make_unique<ego_planner::EGOReplanFSM>();
+        planner->init(nh);
+        planner->planner_manager_->grid_map_ = grid_map_;
+        ego_planners.push_back(std::move(planner));
+        
+        std::string topic = "/drone_" + std::to_string(i) + "/odom_world";
+        odom_subs[i] = nh_.subscribe<nav_msgs::Odometry>(topic, 10, boost::bind(&Decision::odomCallback, this, _1, i));
     }
     
-    decision_timer_ = nh.createTimer(ros::Duration(0.1), &Decision::decision_making, this);
-    marker_pub = nh.advertise<visualization_msgs::Marker>("/visualization_marker", 10);//
-    marker_pub2 = nh.advertise<visualization_msgs::Marker>("/visualization_marker2", 10);
-    drone_task_pub = nh.advertise<diagnostic_msgs::KeyValue>("/drone_tasks", 10);
+    task_completed.resize(drone_num, false);
 
-    target_sub = nh.subscribe("/target_position", 10, &Decision::targetCallback, this);//订阅真实信息(例如虚拟目标或者真实目标的坐标)
-    idodom_sub = nh.subscribe("/drone_planning/odom", 10, &Decision::IdOdomCallback, this, ros::TransportHints().tcpNoDelay());//订阅无人机的当前位置状态
-    target_pub = nh.advertise<geometry_msgs::Point>("/target_position", 10);
-    id_target_pub = nh.advertise<traj_utils::IdOdom>("/id_target", 10);
+    task_result_sub = nh_.subscribe("/task_result", 10, &Decision::taskResultCallback, this);
+    bspline_pub = nh_.advertise<ego_planner::Bspline>("/planning/bspline", 10);
 
-    initSearchMap();
+    // decision_timer_ = nh.createTimer(ros::Duration(0.1), &Decision::decision_making, this);
 }
 
 void Decision::calculate_priorities() {
@@ -417,30 +424,34 @@ DecisionTree::Ptr Decision::get_highest_priority_drone() {
 }
 
 void Decision::execute_tasks() {
-    for (const auto& decision_tree : decision_trees) {
-        if (decision_tree->has_decided && !decision_tree->has_executed_first_layer) {
-            traj_utils::IdOdom id_target;
-            Eigen::Vector3d next_position;
-            
-            int drone_id = decision_tree->getid();
-            int task = decision_tree->best_first_layer_task;
-            
-            if (task == TASK_NODE::SEARCH) {
-                next_position = task_node->getNextSearchPosition(drone_id);
-            } else if (task == TASK_NODE::CHECK || task == TASK_NODE::ATTACK) {
-                next_position = task_node->selected_targets[drone_id][task];
+   for (int i = 0; i < drone_num; i++) {
+            auto& decision_tree = decision_trees[i];
+            if (decision_tree->has_decided && !decision_tree->has_executed_first_layer) {
+                int task = decision_tree->best_first_layer_task;
+                
+                // 获取起点和终点
+                Eigen::Vector3d start_pt = ego_planners[i]->odom_pos_;
+                Eigen::Vector3d start_vel = ego_planners[i]->odom_vel_;
+                Eigen::Vector3d start_acc = Eigen::Vector3d::Zero();
+                Eigen::Vector3d end_pt = task_node->selected_targets[i][task];
+                Eigen::Vector3d end_vel = Eigen::Vector3d::Zero();
+
+                // 使用EGO Planner生成轨迹
+                ego_planners[i]->planGlobalTraj(start_pt, start_vel, start_acc, end_pt, end_vel, end_vel);
+
+                // 调用EGO Planner的重新规划功能来生成和发布轨迹
+                bool success = ego_planners[i]->callReboundReplan(false, false);
+                if (success) {
+                ROS_INFO("Successfully planned and published trajectory for drone %d", i);
+                } else {
+                ROS_WARN("Failed to plan trajectory for drone %d", i);
+                }
+                // 标记任务已执行
+                decision_tree->apply_first_layer_decision();
+                // 更新无人机状态
+                task_node->update_drone_status(i, end_pt, decision_tree->current_task);
             }
-            
-            id_target.drone_id = drone_id;
-            id_target.pose.x = next_position[0];
-            id_target.pose.y = next_position[1];
-            id_target.pose.z = next_position[2];
-            id_target_pub.publish(id_target);
-            
-            decision_tree->apply_first_layer_decision();
-            task_node->update_drone_status(drone_id, next_position, decision_tree->current_task);
         }
-    }
 }//需要添加发布任务出去的代码
 
 void Decision::update_status(int id, Eigen::Vector3d position) {
@@ -453,45 +464,123 @@ void Decision::update_status(int id, Eigen::Vector3d position) {
     }
 }
 
-void Decision::IdOdomCallback(const traj_utils::IdOdomConstPtr &msg) {
+
+void Decision::odomCallback(const nav_msgs::OdometryConstPtr &msg, int drone_id) {
+    std::lock_guard<std::mutex> lock(task_node_mutex);
     if (!msg) {
-        ROS_WARN("Received null pointer in IdOdomCallback");
+        ROS_WARN("Received null pointer in odomCallback for drone %d", drone_id);
         return;
     }
-    update_status(msg->drone_id, Eigen::Vector3d(msg->pose.x, msg->pose.y, msg->pose.z));
+    ego_planners[drone_id]->odometryCallback(msg);
+    
+    Eigen::Vector3d current_pos = ego_planners[drone_id]->odom_pos_;
+    update_status(drone_id, current_pos);
+
+    // 检查当前任务是否完成
+    if (!task_completed[drone_id] && !task_node->selected_targets[drone_id].empty()) {
+        int current_task = decision_trees[drone_id]->best_first_layer_task;
+        Eigen::Vector3d target_pos = task_node->selected_targets[drone_id][current_task];
+        
+        if ((current_pos - target_pos).norm() < completion_threshold) {
+            // 任务完成
+            task_completed[drone_id] = true;
+           // 检查是否所有无人机都完成了任务
+            if (std::all_of(task_completed.begin(), task_completed.end(), [](bool v) { return v; })) {
+            // 所有无人机都完成了任务，触发重新规划
+            replan();
+            }
+        } else {
+            // 任务未完成，继续执行当前任务
+            continue_current_task(drone_id, current_pos, target_pos);
+        }
+    }
+    if (check_replanning_condition()) {
+        replan();
+    }
+
 }
 
-void Decision::task_result_callback(const TaskResultMsg::ConstPtr& msg) {
-    ROS_INFO("Received task result for drone %d: %s", msg->drone_id, msg->task_result.c_str());
+void Decision::taskResultCallback(const your_package::TaskResultConstPtr& msg) {
+    std::lock_guard<std::mutex> lock(task_node_mutex);
+    
+    TaskResult result;
+    result.drone_id = msg->drone_id;
+    result.task_type = msg->task_type;
+    result.position = Eigen::Vector3d(msg->position.x, msg->position.y, msg->position.z);
 
-    update_task_results(msg->drone_id, msg->task_result, Eigen::Vector3d(msg->position.x, msg->position.y, msg->position.z));
-    replanning_needed = true;
-}
-
-void Decision::targetCallback(const geometry_msgs::PointStamped::ConstPtr& msg) {
-    target_point.x = msg->point.x;
-    target_point.y = msg->point.y;
-    target_point.z = msg->point.z;
-    target_position_ = Eigen::Vector3d(msg->point.x, msg->point.y, msg->point.z);
+    update_task_results(result.drone_id, result.task_type, result.position);
+    // 任务结果更新后立即重新规划
+    replan();
 }
 
 bool Decision::check_replanning_condition() {
-    // Implement logic to check if replanning is needed
+    // ros::Time current_time = ros::Time::now();
+    // ros::Duration time_since_last_planning = current_time - last_planning_time;
+
+    // 如果距离上次规划超过5秒，就重新规划
+    if (time_since_last_planning.toSec() > 5.0) {
+        return true;
+    }
+
+    // 简单示例：如果任何无人机完成了任务，就重新规划
+    // for (bool completed : task_completed) {
+    //     if (completed) return true;
+    // }
+
+    //示例条件：如果发现新的虚拟目标或真实目标，触发重新规划
+    static int last_virtual_target_count = task_node->virtual_target_;
+    static int last_true_target_count = task_node->true_target_;
+
+    bool new_targets_found = (task_node->virtual_target_ > last_virtual_target_count) || 
+                             (task_node->true_target_ > last_true_target_count);
+
+    last_virtual_target_count = task_node->virtual_target_;
+    last_true_target_count = task_node->true_target_;
+
+    return new_targets_found;
+
     return false;
 }
 
 void Decision::replan() {
+    ROS_INFO("Starting replanning process");
+    std::lock_guard<std::mutex> lock(decision_mutex);
+    if (is_decision_running) {
+        ROS_WARN("Decision making is already running. Skipping this replan request.");
+        return;
+    }
     // Reset decision states
     for (auto& decision_tree : decision_trees) {
         decision_tree->reset_decision_state();
     }
-    
+    decided_drones.clear();
     // Recalculate task costs
-    for (const auto& [drone_id, position] : task_node->current_position) {
-        task_node->calculate_cost(drone_id);
+    for (int i = 0; i < drone_num; ++i) {
+        task_node->calculate_cost(i);
     }
     
-    replanning_needed = false;
+    start_decision_making();
+    last_planning_time = ros::Time::now();
+}
+
+void Decision::continue_current_task(int drone_id, const Eigen::Vector3d& current_pos, const Eigen::Vector3d& target_pos) {
+    // 获取当前速度和加速度
+    Eigen::Vector3d current_vel = ego_planners[drone_id]->odom_vel_;
+    Eigen::Vector3d current_acc = Eigen::Vector3d::Zero(); // 假设当前加速度为零
+
+    // 目标速度设为零
+    Eigen::Vector3d target_vel = Eigen::Vector3d::Zero();
+
+    // 使用EGO Planner重新规划轨迹
+    ego_planners[drone_id]->planGlobalTraj(current_pos, current_vel, current_acc, target_pos, target_vel, target_vel);
+
+    // 调用EGO Planner的重新规划功能来生成和发布轨迹
+    bool success = ego_planners[drone_id]->callReboundReplan(false, false);
+    if (success) {
+        ROS_INFO("Successfully replanned trajectory for drone %d to continue current task", drone_id);
+    } else {
+        ROS_WARN("Failed to replan trajectory for drone %d to continue current task", drone_id);
+    }
 }
 
 void Decision::update_task_results(int drone_id, const std::string& task_result, const Eigen::Vector3d& position) {
@@ -510,93 +599,26 @@ void Decision::update_task_results(int drone_id, const std::string& task_result,
 }
 
 void Decision::reset_simulation_results() {
-    task_node->decided_drones_simulations.clear();
+    task_node->decided_drones_simulations = SimulationResult{
+        task_node->virtual_target_,  // 保留实际虚拟目标数量
+        task_node->true_target_,     // 保留实际真实目标数量
+    };
 }
 
-void Decision::rviz_display() {
-    displayOccupancyMap();
-    displayTargetPoint();
-    displayDroneTasks();
-    publishDroneTasks();
-}
-
-void Decision::displayOccupancyMap() {
-    for (int i = 0; i < 16; i++) {
-        visualization_msgs::Marker marker;
-        marker.header.frame_id = "world";
-        marker.header.stamp = ros::Time::now();
-        marker.ns = "occupancy_map";
-        marker.id = i;
-        marker.type = visualization_msgs::Marker::CUBE;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.scale.x = marker.scale.y = 5.0;
-        marker.scale.z = 1.0;
-        marker.color.a = 0.3f;
-        marker.color.r = (occ_map[i] == 1) ? 0.0f : 1.0f;
-        marker.color.g = (occ_map[i] == 1) ? 1.0f : 0.0f;
-        marker.color.b = 0.0f;
-        marker.pose.position.x = map_position[i][0];
-        marker.pose.position.y = map_position[i][1];
-        marker.pose.position.z = map_position[i][2];
-        marker.pose.orientation.w = 1.0;
-        marker_pub2.publish(marker);
+bool Decision::allAreasExplored() {
+    // 检查是否所有区域都被探索
+    // 这里的实现取决于如何定义"探索完成"
+    for (int occupied : grid_map_->get_occ_map()) {
+        if (occupied == 0) return false;
     }
-}
-
-void Decision::displayTargetPoint() {
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = "world";
-    marker.header.stamp = ros::Time::now();
-    marker.ns = "target_point";
-    marker.id = 0;
-    marker.type = visualization_msgs::Marker::POINTS;
-    marker.action = visualization_msgs::Marker::ADD;
-    marker.scale.x = marker.scale.y = 0.3;
-    marker.color.r = 1.0f;
-    marker.color.a = 0.8f;
-    geometry_msgs::Point p;
-    p.x = target_position_[0];
-    p.y = target_position_[1];
-    p.z = target_position_[2];
-    marker.points.push_back(p);
-    marker_pub.publish(marker);
-}//显示发现的目标点
-
-void Decision::displayDroneTasks() {
-    for (const auto& decision_tree : decision_trees) {
-        visualization_msgs::Marker marker;
-        marker.header.frame_id = "world";
-        marker.header.stamp = ros::Time::now();
-        marker.ns = "drone_tasks";
-        marker.id = decision_tree->getid();
-        marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.pose.position = decision_tree->current_position_;
-        marker.pose.orientation.w = 1.0;
-        marker.scale.z = 0.5;
-        marker.color.a = 0.8;
-        marker.color.r = (marker.id == 0) ? 1.0 : 0.0;
-        marker.color.g = (marker.id == 1) ? 1.0 : 0.0;
-        marker.color.b = (marker.id == 2) ? 1.0 : 0.0;
-        marker.text = std::to_string(marker.id) + ":" + decision_tree->get_task();
-        marker_pub.publish(marker);
-    }
-}//显示每个无人机当前执行的任务
-
-void Decision::publishDroneTasks() {
-    for (const auto& decision_tree : decision_trees) {
-        diagnostic_msgs::KeyValue msg;
-        msg.key = std::to_string(decision_tree->getid());
-        msg.value = decision_tree->get_task();
-        drone_task_pub.publish(msg);
-        ROS_INFO("Published task for drone %d: %s", decision_tree->getid(), task_status.c_str());
-    }
+    return true;
 }
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "decision_tree");
     ros::NodeHandle nh;
     Decision decision(nh);
+    decision.start_decision_making();
     ros::spin();
     return 0;
 }
