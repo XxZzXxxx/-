@@ -1,0 +1,6 @@
+<launch> 
+        <node pkg="decision_tree" name="decision_tree" type="decision_tree" output="screen">
+
+            <param name="/manager/drone_num" value="3"/>
+        </node>
+</launch>

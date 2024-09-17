@@ -1,0 +1,3 @@
+int32 drone_id
+string task_type
+geometry_msgs/Vector3 position

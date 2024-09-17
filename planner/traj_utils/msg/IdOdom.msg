@@ -1,0 +1,2 @@
+int32 drone_id
+geometry_msgs/Point pose
