@@ -11,7 +11,7 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <stdlib.h>
-// #include <shared_mutex>
+#include <mutex>
 
 using std::vector;
 namespace ego_planner
@@ -28,8 +28,8 @@ namespace ego_planner
     ros::Publisher a_star_list_pub;
     ros::Publisher guide_vector_pub;
     ros::Publisher intermediate_state_pub;
-    // mutable std::shared_timed_ vis_;
-
+    mutable std::mutex vis_mutex;
+    
   public:
     PlanningVisualization() {}
     ~PlanningVisualization() {}

@@ -11,7 +11,7 @@
 #include <memory>
 #include "visualization_msgs/Marker.h" // zx-todo
 #include <geometry_msgs/Point.h>
-// #include <mutex>
+#include <mutex>
 #include <thread>
 #include <condition_variable>
 #include <path_searching/dyn_a_star.h>
@@ -34,7 +34,7 @@ class TASK_NODE{
         int drone_num;
         std::shared_ptr<AStar> astar;
         std::map<int, Eigen::Vector3d> current_position;//不同id飞机的当前位置
-        // mutable std::shared_timed_ task_mutex;
+        mutable std::mutex task_mutex;
         /* 0 : search, 1: check, 2: attack */
         TASK_NODE(){};
 
@@ -121,7 +121,6 @@ class DecisionTree
 class Decision
 {
     private:
-        // std::mutex task_node_mutex;
         int drone_num;//无人机数量
         // ros::Timer decision_timer_;//ROS定时器
         ros::NodeHandle nh_;
@@ -144,7 +143,7 @@ class Decision
         std::thread decision_thread;
         bool is_decision_running{false};
         std::condition_variable_any cv;
-        // mutable std::shared_timed_mutex decision_mutex;
+        mutable std::mutex decision_mutex;
     public:
         TASK_NODE::Ptr task_node;
 

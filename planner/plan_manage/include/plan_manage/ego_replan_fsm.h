@@ -18,7 +18,7 @@
 #include <plan_manage/planner_manager.h>
 #include <traj_utils/planning_visualization.h>
 #include <shared_msgs/TaskResult.h>
-// #include <shared_mutex>
+#include <mutex>
 // #include <atomic>
 
 using std::vector;
@@ -30,6 +30,7 @@ namespace ego_planner
   {
 
   private:
+    mutable std::mutex fsm_mutex;
     /* ---------- flag ---------- */
     enum FSM_EXEC_STATE
     {
@@ -61,11 +62,6 @@ namespace ego_planner
     int waypoint_num_;
     double planning_horizen_, planning_horizen_time_;// 规划视野和时间
     double emergency_time_;// 紧急时间
-    // mutable std::shared_timed_mutex fsm_mutex;
-    // std::atomic<bool> trigger_{false};
-    // std::atomic<bool> have_target_{false};
-    // std::atomic<bool> have_odom_{false};
-    // std::atomic<bool> have_new_target_{false};
     /* planning data */
     bool trigger_, have_target_, have_odom_, have_new_target_;// 各种状态标志
     FSM_EXEC_STATE exec_state_;// 当前执行状态

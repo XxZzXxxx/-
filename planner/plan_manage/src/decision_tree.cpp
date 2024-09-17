@@ -1,4 +1,5 @@
 #include <plan_manage/decision_tree.h>
+#include <mutex>
 
 double missionallcost = 40.0;
 std::array<Eigen::Vector3d, 16> map_position;
@@ -94,19 +95,19 @@ bool TASK_NODE::precon(int drone_id, int task_name, int simulated_virtual_target
 }
 
 void TASK_NODE::update_drone_status(int drone_id, const Eigen::Vector3d& position, const std::string& task) {
-    // std::unique_lock<std::shared_timed_mutex> lock(task_mutex);
+    std::unique_lock<std::mutex> lock(task_mutex);
     current_position[drone_id] = position;
     current_drone_tasks[drone_id] = task;
 }
 
 void TASK_NODE::add_virtual_target(const Eigen::Vector3d& position) {
-    // std::unique_lock<std::shared_timed_mutex> lock(task_mutex);
+    std::unique_lock<std::mutex> lock(task_mutex);
     virtual_target_positions.push_back(position);
     virtual_target_++;
 }
 
 void TASK_NODE::remove_virtual_target(const Eigen::Vector3d& position) {
-    // std::unique_lock<std::shared_timed_mutex> lock(task_mutex);
+    std::unique_lock<std::mutex> lock(task_mutex);
     auto it = std::find(virtual_target_positions.begin(), virtual_target_positions.end(), position);
     if (it != virtual_target_positions.end()) {
         virtual_target_positions.erase(it);
@@ -146,7 +147,7 @@ void TASK_NODE::update_simulation_result(int drone_id, int virtual_targets, int 
 }
 
 SimulationResult TASK_NODE::get_current_state() const {
-    // std::shared_lock<std::shared_timed_mutex> lock(task_mutex);
+    std::lock_guard<std::mutex> lock(task_mutex);
     return decided_drones_simulations;
 }
 
@@ -276,7 +277,7 @@ void DecisionTree::update_status(Eigen::Vector3d position) {
 }
 
 void DecisionTree::reset_decision_state() {
-    // std::unique_lock<std::shared_timed_mutex> lock(tree_mutex);
+    // std::unique_lock<std::mutex> lock(tree_mutex);
     has_decided = false;
     has_executed_first_layer = false;
     current_task = "search";
@@ -285,7 +286,7 @@ void DecisionTree::reset_decision_state() {
 }
 
 Decision::Decision(ros::NodeHandle &nh, std::shared_ptr<GridMap> grid_map)
-    : nh_(nh), grid_map_(grid_map), last_planning_time(ros::Time::now()), time_since_last_planning(0), is_decision_running(false)
+    : nh_(nh), grid_map_(grid_map), last_planning_time(ros::Time::now()), time_since_last_planning(0), is_decision_running(false),decision_mutex()
 {
     initDecision(nh, grid_map);
 }
@@ -297,7 +298,7 @@ Decision::~Decision() {
 }
 
 void Decision::start_decision_making() {
-    // std::unique_lock<std::shared_timed_mutex> lock(decision_mutex);
+    std::unique_lock<std::mutex> lock(decision_mutex);
     if (decision_thread.joinable()) {
         decision_thread.join();
     }
@@ -306,7 +307,7 @@ void Decision::start_decision_making() {
 }
 
 void Decision::decision_thread_function() {
-    // std::unique_lock<std::shared_timed_mutex> lock(decision_mutex);
+    std::unique_lock<std::mutex> lock(decision_mutex);
     try {
             decision_making();
         }
@@ -319,6 +320,7 @@ void Decision::decision_thread_function() {
 }
 
 void Decision::decision_making() {
+    std::unique_lock<std::mutex> lock(decision_mutex);
     if(!allAreasExplored()){
     // std::lock_guard<std::mutex> lock(task_node_mutex);
     ROS_INFO("Starting decision making process");
@@ -482,7 +484,7 @@ void Decision::update_status(int id, Eigen::Vector3d position) {
 
 
 void Decision::odomCallback(const nav_msgs::OdometryConstPtr &msg, int drone_id) {
-    // std::lock_guard<std::mutex> lock(task_node_mutex);
+    std::unique_lock<std::mutex> lock(decision_mutex);
     if (!msg) {
         ROS_WARN("Received null pointer in odomCallback for drone %d", drone_id);
         return;
@@ -517,7 +519,7 @@ void Decision::odomCallback(const nav_msgs::OdometryConstPtr &msg, int drone_id)
 }
 
 void Decision::taskResultCallback(const shared_msgs::TaskResultConstPtr& msg) {
-    // std::lock_guard<std::mutex> lock(task_node_mutex);
+    std::unique_lock<std::mutex> lock(decision_mutex);
     
     shared_msgs::TaskResult result;
     result.drone_id = msg->drone_id;
@@ -559,8 +561,8 @@ bool Decision::check_replanning_condition() {
 }
 
 void Decision::replan() {
+    std::unique_lock<std::mutex> lock(decision_mutex);
     ROS_INFO("Starting replanning process");
-    // std::lock_guard<std::mutex> lock(decision_mutex);
     if (is_decision_running) {
         ROS_WARN("Decision making is already running. Skipping this replan request.");
         return;

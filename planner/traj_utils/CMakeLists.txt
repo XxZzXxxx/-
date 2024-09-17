@@ -2,12 +2,9 @@ cmake_minimum_required(VERSION 2.8.3)
 project(traj_utils)
 
 set(CMAKE_BUILD_TYPE "Release")
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g")
+ADD_COMPILE_OPTIONS(-std=c++11 )
+ADD_COMPILE_OPTIONS(-std=c++14 )
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
 find_package(catkin REQUIRED COMPONENTS
   #bspline_opt
@@ -59,6 +56,11 @@ add_library( traj_utils
     src/planning_visualization.cpp 
     src/polynomial_traj.cpp 
     )
+
+add_dependencies(traj_utils ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
 target_link_libraries( traj_utils
     ${catkin_LIBRARIES} 
+    ${Eigen3_LIBRARIES}
+    ${PCL_LIBRARIES}
     )  

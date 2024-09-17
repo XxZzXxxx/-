@@ -19,7 +19,7 @@ namespace ego_planner
   void PlanningVisualization::displayMarkerList(ros::Publisher &pub, const vector<Eigen::Vector3d> &list, double scale,
                                                 Eigen::Vector4d color, int id, bool show_sphere /* = true */ )
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     visualization_msgs::Marker sphere, line_strip;
     sphere.header.frame_id = line_strip.header.frame_id = "world";
     sphere.header.stamp = line_strip.header.stamp = ros::Time::now();
@@ -55,7 +55,7 @@ namespace ego_planner
   void PlanningVisualization::generatePathDisplayArray(visualization_msgs::MarkerArray &array,
                                                        const vector<Eigen::Vector3d> &list, double scale, Eigen::Vector4d color, int id)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     visualization_msgs::Marker sphere, line_strip;
     sphere.header.frame_id = line_strip.header.frame_id = "map";
     sphere.header.stamp = line_strip.header.stamp = ros::Time::now();
@@ -91,7 +91,7 @@ namespace ego_planner
   void PlanningVisualization::generateArrowDisplayArray(visualization_msgs::MarkerArray &array,
                                                         const vector<Eigen::Vector3d> &list, double scale, Eigen::Vector4d color, int id)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     visualization_msgs::Marker arrow;
     arrow.header.frame_id = "map";
     arrow.header.stamp = ros::Time::now();
@@ -133,7 +133,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayGoalPoint(Eigen::Vector3d goal_point, Eigen::Vector4d color, const double scale, int id)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     visualization_msgs::Marker sphere;
     sphere.header.frame_id = "world";
     sphere.header.stamp = ros::Time::now();
@@ -158,7 +158,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayGlobalPathList(vector<Eigen::Vector3d> init_pts, const double scale, int id)
   {
-    // std::shared_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     if (global_list_pub.getNumSubscribers() == 0)
     {
       return;
@@ -170,7 +170,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayMultiInitPathList(vector<vector<Eigen::Vector3d>> init_trajs, const double scale)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     if (init_list_pub.getNumSubscribers() == 0)
     {
       return;
@@ -199,7 +199,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayInitPathList(vector<Eigen::Vector3d> init_pts, const double scale, int id)
   {
-    // std::shared_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     if (init_list_pub.getNumSubscribers() == 0)
     {
       return;
@@ -211,7 +211,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayOptimalList(Eigen::MatrixXd optimal_pts, int id)
   {
-    // std::shared_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     if (optimal_list_pub.getNumSubscribers() == 0)
     {
       return;
@@ -229,7 +229,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayAStarList(std::vector<std::vector<Eigen::Vector3d>> a_star_paths, int id /* = Eigen::Vector4d(0.5,0.5,0,1)*/)
   {
-    // std::shared_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     if (a_star_list_pub.getNumSubscribers() == 0)
     {
       return;
@@ -256,7 +256,7 @@ namespace ego_planner
 
   void PlanningVisualization::displayArrowList(ros::Publisher &pub, const vector<Eigen::Vector3d> &list, double scale, Eigen::Vector4d color, int id)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(vis_mutex);
+    std::unique_lock<std::mutex> lock(vis_mutex);
     visualization_msgs::MarkerArray array;
     // clear
     pub.publish(array);

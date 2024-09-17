@@ -4,10 +4,9 @@
 
 namespace ego_planner
 {
-  // std::mutex fsm_mutex;
   void EGOReplanFSM::init(ros::NodeHandle &nh)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(fsm_mutex);
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     current_wp_ = 0;
     exec_state_ = FSM_EXEC_STATE::INIT;
     have_target_ = false;
@@ -163,7 +162,7 @@ namespace ego_planner
 
   void EGOReplanFSM::odometryCallback(const nav_msgs::OdometryConstPtr &msg)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(fsm_mutex);
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     odom_pos_(0) = msg->pose.pose.position.x;
     odom_pos_(1) = msg->pose.pose.position.y;
     odom_pos_(2) = msg->pose.pose.position.z;
@@ -185,7 +184,7 @@ namespace ego_planner
 
   void EGOReplanFSM::changeFSMExecState(FSM_EXEC_STATE new_state, string pos_call)
   {
-
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     if (new_state == exec_state_)
       continously_called_times_++;
     else
@@ -211,7 +210,7 @@ namespace ego_planner
 
   void EGOReplanFSM::execFSMCallback(const ros::TimerEvent &e)
 {
-  // std::unique_lock<std::shared_timed_mutex> lock(fsm_mutex);
+  std::unique_lock<std::mutex> lock(fsm_mutex);
   static int fsm_num = 0;
   fsm_num++;
   if (fsm_num == 100)
@@ -359,7 +358,7 @@ namespace ego_planner
 
   bool EGOReplanFSM::planFromCurrentTraj()
   {
-
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     LocalTrajData *info = &planner_manager_->local_data_;
     ros::Time time_now = ros::Time::now();
     double t_cur = (time_now - info->start_time_).toSec();
@@ -391,7 +390,7 @@ namespace ego_planner
 
   void EGOReplanFSM::checkCollisionCallback(const ros::TimerEvent &e)
   {
-    // std::lock_guard<std::mutex> lock(fsm_mutex);
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     LocalTrajData *info = &planner_manager_->local_data_;
     auto map = planner_manager_->grid_map_;
 
@@ -435,7 +434,7 @@ namespace ego_planner
 
   bool EGOReplanFSM::callReboundReplan(bool flag_use_poly_init, bool flag_randomPolyTraj)
   {
-    // std::unique_lock<std::shared_timed_mutex> lock(fsm_mutex);
+    std::unique_lock<std::mutex> lock(fsm_mutex);
     getLocalTarget();
 
     bool plan_success =
